@@ -126,8 +126,8 @@
   ],
   "telegram": {
     "enabled": true,
-    "token": "YOUR_TELEGRAM_BOT_TOKEN",
-    "chat_id": "YOUR_TELEGRAM_CHAT_ID",
+    "token": "8393793378:AAGLeJWdcnI8Uuq8jskpt_A6o-Eausf_wJU",
+    "chat_id": "-1003644445285",
     "authorized_users": ["867228586", "2130016467", "1136593512"],
     "allow_custom_messages": true,
     "notification_settings": {
@@ -181,8 +181,8 @@
     "listen_port": 8080,
     "verbosity": "error",
     "enable_openapi": false,
-    "jwt_secret_key": "CHANGE_ME_JWT_SECRET",
-    "ws_token": "CHANGE_ME_WS_TOKEN",
+    "jwt_secret_key": "f27e8a9020b54f82df881556110fb855553a7318ac867dcfa6b39c48a417cd85",
+    "ws_token": "8f3e5c9a2b7d1f4e6g9h0j2k4m6n8p1q3r5s7t9v",
     "CORS_origins": [],
     "username": "admin",
     "password": "admin"
