@@ -1,4 +1,5 @@
 import logging
+import os
 import warnings
 from datetime import datetime
 
@@ -11,6 +12,7 @@ import numpy as np
 from pandas import DataFrame
 from typing import Optional
 from freqtrade.persistence import Trade
+import requests
 from freqtrade.strategy import (
     IStrategy,
     informative,  # @informative decorator
@@ -267,6 +269,12 @@ class FreqAi_NoTank4h(IStrategy):
                                stake: float, profit: float, dca_order_id: str) -> None:
         """Send Telegram message with Accept/Decline buttons for DCA confirmation"""
         try:
+            bot_token = os.getenv("DCA_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+            chat_id = os.getenv("TELEGRAM_CHAT_ID")
+            if not bot_token or not chat_id:
+                logger.warning("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set; cannot send DCA confirmation")
+                return
+
             message = (
                 f"🔄 *DCA Order Confirmation Required*\n\n"
                 f"Pair: {pair}\n"
@@ -278,12 +286,28 @@ class FreqAi_NoTank4h(IStrategy):
                 f"⏱️ *Auto-decline in {self.dca_confirmation_timeout_minutes} minutes if no response*\n\n"
                 f"*Please confirm or decline this DCA order*"
             )
-            
-            if self.dp and hasattr(self.dp, 'send_msg'):
-                self.dp.send_msg(message, parse_mode='markdown')
-                logger.info(f"DCA confirmation request sent for {dca_order_id} (will auto-decline in {self.dca_confirmation_timeout_minutes}min)")
-            else:
-                logger.warning(f"Cannot send DCA confirmation - send_msg not available")
+
+            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown",
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [
+                            {"text": "✅ Accept DCA", "callback_data": f"dca_accept_{dca_order_id}"},
+                            {"text": "❌ Decline DCA", "callback_data": f"dca_decline_{dca_order_id}"}
+                        ]
+                    ]
+                }
+            }
+
+            response = requests.post(url, json=payload, timeout=10)
+            response.raise_for_status()
+            logger.info(
+                f"DCA confirmation request sent for {dca_order_id} "
+                f"(auto-decline in {self.dca_confirmation_timeout_minutes}min)"
+            )
                 
         except Exception as e:
             logger.error(f"Failed to send DCA confirmation: {str(e)}")

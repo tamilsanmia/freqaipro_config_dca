@@ -7,16 +7,21 @@ services:
     volumes:
       - /root/dca-trading/user_data:/freqtrade/user_data
     ports:
-      - "8080:8080"
+      - "8001:8080"
     environment:
       - FREQTRADE__TELEGRAM__ENABLED=True
-      - FREQTRADE__TELEGRAM__TOKEN=${TELEGRAM_BOT_TOKEN}
+      - FREQTRADE__TELEGRAM__TOKEN=${ALERT_BOT_TOKEN}
       - FREQTRADE__TELEGRAM__CHAT_ID=${TELEGRAM_CHAT_ID}
       - FREQTRADE__API_SERVER__ENABLED=True
       - FREQTRADE__API_SERVER__LISTEN_IP_ADDRESS=0.0.0.0
       - FREQTRADE__API_SERVER__LISTEN_PORT=8080
       - FREQTRADE__API_SERVER__JWT_SECRET_KEY=${FREQTRADE_JWT_SECRET}
-    command: trade --config user_data/config.json --userdir user_data
+    command: >
+      trade
+      --logfile /freqtrade/user_data/logs/freqtrade.log
+      --db-url sqlite:////freqtrade/user_data/tradesv3.sqlite
+      --config /freqtrade/user_data/config.json
+      --strategy FreqAi_NoTank4h
     restart: unless-stopped
     networks:
       - trading_network
@@ -43,7 +48,7 @@ services:
       - DATA_DIR=/freqtrade/user_data
       - WEBHOOK_PORT=5555
       - WEBHOOK_HOST=0.0.0.0
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_BOT_TOKEN=${DCA_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - AUTHORIZED_USERS=${AUTHORIZED_USERS}
     restart: unless-stopped

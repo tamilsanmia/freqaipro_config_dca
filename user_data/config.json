@@ -11,6 +11,7 @@
   "margin_mode": "isolated",
   "stoploss_on_exchange": true,
   "dry_run": true,
+  "db_url": "sqlite:///user_data/tradesv3.dryrun.sqlite",
   "cancel_open_orders_on_exit": false,
   "unfilledtimeout": {
     "unit": "minutes",
@@ -126,14 +127,14 @@
   ],
   "telegram": {
     "enabled": true,
-    "token": "8393793378:AAGLeJWdcnI8Uuq8jskpt_A6o-Eausf_wJU",
+    "token": "8167537377:AAG89NTbpOOD35TcR4utkv0hUZ8golLj8I8",
     "chat_id": "-1003644445285",
     "authorized_users": ["867228586", "2130016467", "1136593512"],
     "allow_custom_messages": true,
     "notification_settings": {
       "status": "silent",
       "warning": "on",
-      "startup": "off",
+      "startup": "on",
       "entry": "silent",
       "entry_fill": "on",
       "entry_cancel": "silent",

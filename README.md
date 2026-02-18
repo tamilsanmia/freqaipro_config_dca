@@ -1,142 +1,176 @@
 # DCA Telegram Confirmation System
 ## Complete Production Setup for Freqtrade
 
-**Version:** 1.0  
+**Version:** 2.0 - Dual-Bot Configuration  
 **Last Updated:** February 18, 2026  
-**Status:** ✅ Production Ready
+**Status:** ✅ Production Ready & Tested
+
+### 🆕 Latest Features
+- **Dual Telegram Bots**: Separate DCA confirmation & trade alert bots
+- **Dual Timeframe Entries**: 1h + 4h separated entry signals
+- **Webhook System**: Direct Telegram API callbacks for DCA approval
+- **Persistent Volume**: Database accessible on host filesystem
+- **Explicit Command Configuration**: All args hardcoded for consistency
 
 ---
 
-## 🚀 Quick Start (2 Minutes)
+## 🚀 Quick Start (5 Minutes)
 
 ```bash
-cd /root/dca-config
+cd /root/dca-trading
 
-# 1. Create environment file
-cp config/.env.example .env
+# 1. Setup environment with both bot tokens
+cp .env.example .env
+nano .env  # Add DCA_BOT_TOKEN and ALERT_BOT_TOKEN
 
-# 2. Edit .env with your Telegram credentials
-nano .env
+# 2. Verify config.json has your exchange keys
+nano user_data/config.json
 
-# 3. Run deployment script
-bash scripts/deploy.sh
+# 3. Deploy
+docker compose -f docker/docker-compose-dca.yml --env-file .env up -d --build
 
-# 4. Edit config.json with exchange keys
-nano config.json
+# 4. Verify health (wait 30 seconds for startup)
+curl http://localhost:8001/api/v1/ping           # Should return {"status":"pong"}
+curl http://localhost:5555/health                # Should return {"status":"ok",...}
 
 # 5. Monitor
-docker-compose -f docker/docker-compose-dca.yml logs -f
+docker logs freqtrade-dca -f
 ```
 
 ---
 
 ## 📋 Prerequisites
 
-- Docker & Docker Compose
-- Telegram Bot (from @BotFather)
-- Freqtrade Account & API Keys (Binance)
-- Python 3.10+
+- Docker & Docker Compose (both services)
+- **2 Telegram Bots** (created from @BotFather):
+  - DCA Confirmation Bot: receives webhook callbacks for order approval
+  - Alert Bot: sends trade entry/exit notifications
+- Binance API Keys (Futures trading enabled)
+- Python 3.10+ (for direct development; Docker handles this)
+
+### Telegram Setup - Dual Bot Configuration
+
+**Bot 1: DCA Confirmation Bot**
+- Purpose: Receives callback buttons for manual DCA approval
+- Setup: `@BotFather` → `/newbot` → Name it "DCA_ConfirmBot"
+- Inline buttons: Enable in BotFather
+- Token: Save as `DCA_BOT_TOKEN` in .env
+
+**Bot 2: Alert Bot**
+- Purpose: Sends trade entry/exit notifications automatically
+- Setup: `@BotFather` → `/newbot` → Name it "TradeAlertBot"
+- Token: Save as `ALERT_BOT_TOKEN` in .env
+
+**Chat ID:**
+1. Create a Telegram group or use personal chat
+2. Add both bots to the group (or your personal chat)
+3. Message `@userinfobot` to get your chat ID
+4. Save as `TELEGRAM_CHAT_ID` in .env (for groups, will be negative)
 
 ---
 
 ## 📁 Folder Structure
 
 ```
-/root/dca-config/
-├── config/                          # Configuration files
-│   ├── .env.example                # Environment template
-│   └── config.json.example         # Freqtrade config template
-├── docker/                          # Docker files
-│   ├── docker-compose-dca.yml      # Docker Compose configuration
-│   └── Dockerfile                   # Webhook server Dockerfile
-├── docs/                            # Documentation
-│   ├── SETUP.md                     # Setup guide
-│   ├── TELEGRAM_SETUP.md            # Telegram configuration
-│   ├── TROUBLESHOOTING.md           # Troubleshooting guide
-│   └── API.md                       # API documentation
-├── scripts/                         # Helper scripts
-│   ├── deploy.sh                    # Automated deployment
-│   ├── dca_telegram_handler.py      # DCA confirmation handler
-│   └── dca_webhook.py               # Webhook server
-├── strategies/                      # Trading strategies
-│   └── FreqAi_NoTank4h.py          # Main DCA strategy with Telegram integration
-├── user_data/                       # Runtime data (created by deploy.sh)
-│   ├── strategies/                  # Strategy folder
-│   ├── logs/                        # Application logs
-│   └── dca_confirmations.json       # DCA order history
-├── README.md                        # This file
-└── .env                             # Environment variables (create from .env.example)
+/root/dca-trading/
+├── docker/
+│   ├── docker-compose-dca.yml      # Dual-service orchestration
+│   ├── Dockerfile                  # Webhook server image
+│   ├── dca_webhook.py              # Webhook callback handler
+│   └── dca_telegram_handler.py      # DCA approval handler
+├── user_data/
+│   ├── config.json                 # Freqtrade main config
+│   ├── .env                        # Environment vars (DCA_BOT_TOKEN, ALERT_BOT_TOKEN)
+│   ├── tradesv3.sqlite             # SQLite database (on host volume)
+│   ├── strategies/
+│   │   └── FreqAi_NoTank4h.py      # Main strategy (dual 1h/4h entries)
+│   ├── logs/
+│   ├── data/
+│   ├── backtest_results/
+│   └── hyperopts/
+├── README.md                       # This file
+├── SETUP_GUIDE.md                  # Detailed setup instructions
+├── .env                            # Environment variables (creates from template)
+└── .gitignore                      # Excludes secrets and database
 ```
 
 ---
 
 ## ⚙️ Configuration Steps
 
-### 1. Telegram Bot Setup
+### 1. Telegram Bots Setup
 
-1. Open Telegram → Search `@BotFather`
-2. Send `/newbot`
-3. Bot name: `YourTradingBot`
-4. Bot username: `your_trading_bot_xyz` (must be unique)
-5. **Save the API Token**
+**Create DCA Confirmation Bot:**
+1. Telegram → `@BotFather` → `/newbot`
+2. Name: `DCA_ConfirmBot`
+3. Save the token → Add to `.env` as `DCA_BOT_TOKEN`
+4. `/mybots` → Select bot → Settings → Buttons → Inline buttons: **ON**
 
-**Get Chat ID:**
-1. Search `@userinfobot`
-2. Send `/start`
-3. Note your **User ID** or **Group ID**
+**Create Alert Bot:**
+1. Telegram → `@BotFather` → `/newbot`
+2. Name: `TradeAlertBot`
+3. Save the token → Add to `.env` as `ALERT_BOT_TOKEN`
 
-**Enable Buttons:**
-- Go back to `@BotFather`
-- `/mybots` → Select bot → Settings → Inline buttons → ON
+**Get Chat ID (for both bots):**
+1. Create Telegram group or use personal chat
+2. Add both bots to the group
+3. Message `@userinfobot` → `/start`
+4. Note the ID → Add to `.env` as `TELEGRAM_CHAT_ID` (negative for groups)
 
 ### 2. Exchange API Setup
 
 1. Log in to Binance
-2. Settings → API Management
-3. Create a new API key
-4. Enable Spot/Futures trading
-5. **Save Key & Secret**
+2. Settings → API Management → Create API Key
+3. Enable **Futures** trading
+4. ✅ Enable IP restrictions for security
+5. Save Key & Secret → Add to `user_data/config.json`
 
 ### 3. Environment Configuration
 
 ```bash
-# Copy example file
-cp config/.env.example .env
+# Copy template
+cp .env.example .env
 
-# Edit and add your credentials
+# Edit with your credentials
 nano .env
 ```
 
-Edit these variables:
+Required variables:
 ```env
-TELEGRAM_BOT_TOKEN=123456789:ABCDEFGhijklmnopqrstuvwxyz
-TELEGRAM_CHAT_ID=987654321
-EXCHANGE_KEY=your_binance_api_key
-EXCHANGE_SECRET=your_binance_api_secret
-FREQTRADE_JWT_SECRET=auto-generated (keep as is)
+# Telegram Bots (REQUIRED - different tokens!)
+DCA_BOT_TOKEN=8393793378:AAGLeJWdcnI8Uuq8...
+ALERT_BOT_TOKEN=8167537377:AAG89NTbpOOD...
+TELEGRAM_CHAT_ID=-1003644445285
+
+# Freqtrade
+FREQTRADE_JWT_SECRET=f27e8a9020b54f82df881556110fb855553a7318ac867dcfa6b39c48a417cd85
+
+# Authorized users (for Telegram commands)
+AUTHORIZED_USERS=["867228586","2130016467"]
 ```
 
 ### 4. Freqtrade Configuration
 
-```bash
-# Copy example
-cp config/config.json.example config.json
-
-# Edit with your settings
-nano config.json
-```
-
-Key sections:
+Edit `user_data/config.json`:
 ```json
 {
   "exchange": {
     "name": "binance",
-    "key": "YOUR_KEY_FROM_ENV",
-    "secret": "YOUR_SECRET_FROM_ENV"
+    "key": "your_api_key_here",
+    "secret": "your_api_secret_here"
   },
   "stake_currency": "USDT",
-  "max_open_trades": 3,
-  "trading_mode": "futures"
+  "dry_run": true,
+  "trading_mode": "futures",
+  "margin_mode": "isolated",
+  "max_open_trades": 30,
+  "strategy_path": "user_data/strategies/",
+  "strategy": "FreqAi_NoTank4h",
+  "telegram": {
+    "enabled": true,
+    "token": "{{ will be set from ALERT_BOT_TOKEN env var }}",
+    "chat_id": "{{ will be set from TELEGRAM_CHAT_ID env var }}"
+  }
 }
 ```
 
@@ -144,51 +178,82 @@ Key sections:
 
 ## 🚀 Deployment
 
-### Automated Deployment
+### Quick Deployment
 
 ```bash
-# Make script executable
-chmod +x scripts/deploy.sh
+cd /root/dca-trading
 
-# Run deployment
-./scripts/deploy.sh
+# 1. Build and start services
+docker compose -f docker/docker-compose-dca.yml --env-file .env up -d --build
 
-# Answer prompts for:
-# - Telegram Bot Token
-# - Telegram Chat ID
-```
+# 2. Wait 30 seconds for services to spin up
+sleep 30
 
-### Manual Deployment
+# 3. Verify Freqtrade API (port 8001)
+curl http://localhost:8001/api/v1/ping
+# Expected: {"status":"pong"}
 
-```bash
-# 1. Create directories
-mkdir -p user_data/{logs,strategies,backtest_results}
-
-# 2. Copy files
-cp strategies/FreqAi_NoTank4h.py user_data/strategies/
-cp config/config.json.example config.json
-
-# 3. Edit configuration
-nano .env
-nano config.json
-
-# 4. Build and start Docker
-docker-compose -f docker/docker-compose-dca.yml build
-docker-compose -f docker/docker-compose-dca.yml up -d
-
-# 5. Verify
-curl http://localhost:8080/api/v1/ping
+# 4. Verify Webhook health (port 5555)
 curl http://localhost:5555/health
+# Expected: {"status":"ok","timestamp":"..."}
+
+# 5. Check container health
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# Expected: HEALTHY for both freqtrade-dca and dca-webhook
 ```
+
+### Detailed Deployment
+
+```bash
+# 1. Create environment file
+cd /root/dca-trading
+cp .env.example .env
+nano .env  # Add both bot tokens, chat ID, JWT secret
+
+# 2. Update config
+nano user_data/config.json  # Add Binance API keys
+
+# 3. Build images (first time only)
+docker compose -f docker/docker-compose-dca.yml build
+
+# 4. Start services with explicit args (logs, db location, config, strategy)
+docker compose -f docker/docker-compose-dca.yml --env-file .env up -d
+
+# 5. Tail logs
+docker logs -f freqtrade-dca
+
+# 6. Stop services
+docker compose -f docker/docker-compose-dca.yml down
+```
+
+### Docker Command Configuration
+
+The `docker-compose-dca.yml` uses explicit Freqtrade command args:
+```yaml
+command: >
+  trade
+  --logfile /freqtrade/user_data/logs/freqtrade.log
+  --db-url sqlite:////freqtrade/user_data/tradesv3.sqlite
+  --config /freqtrade/user_data/config.json
+  --strategy FreqAi_NoTank4h
+```
+
+This ensures:
+- ✅ Logfile written to host volume
+- ✅ Database accessible on host (not locked in container)
+- ✅ Explicit config path prevents relative path issues
+- ✅ Strategy name hardcoded for consistency
 
 ---
 
-## 📊 Service Ports
+## 📊 Service Ports & Endpoints
 
-| Service | Port | URL | Purpose |
-|---------|------|-----|---------|
-| Freqtrade API | 8080 | http://localhost:8080 | Trading API & WebUI |
-| Webhook | 5555 | http://localhost:5555 | DCA Confirmations |
+| Service | Host Port | Container Port | URL | Purpose |
+|---------|-----------|-----------------|-----|---------|
+| Freqtrade API | 8001 | 8080 | http://localhost:8001 | REST API & WebUI |
+| Freqtrade WebSocket | 8001 | 8080 | ws://localhost:8001 | Real-time updates |
+| Webhook Handler | 5555 | 5555 | http://localhost:5555 | DCA callbacks |
+| Webhook Health | 5555 | 5555 | http://localhost:5555/health | Health check |
 
 ---
 
