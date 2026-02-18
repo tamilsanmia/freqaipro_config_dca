@@ -1,0 +1,97 @@
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+
+# Credentials and sensitive data
+*.pem
+*.key
+*.secret
+credentials.json
+secrets.json
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+user_data/databases/
+
+# Logs
+*.log
+logs/
+user_data/logs/
+
+# Trade history and results
+*.json
+!config.json
+!dca_confirmations.json
+backtest_results/
+user_data/backtest_results/
+hyperopt_results/
+user_data/hyperopt_results/
+
+# Data files
+user_data/data/
+user_data/plot/
+download_*.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.vscode-server/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docker
+docker.tar
+docker-compose.override.yml
+
+# Temporary files
+*.tmp
+*.temp
+*~
+temp/
+tmp/
+
+# System files
+.DS_Store
+Thumbs.db
+*.bak
+
+# Development
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Node (if using node tools)
+node_modules/
+package-lock.json
+npm-debug.log

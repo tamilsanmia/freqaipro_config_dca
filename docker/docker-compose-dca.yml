@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  freqtrade-dca:
+    image: freqtradeorg/freqtrade:latest
+    container_name: freqtrade-dca
+    volumes:
+      - /root/dca-config/user_data:/freqtrade/user_data
+    ports:
+      - "8080:8080"
+    environment:
+      - FREQTRADE__TELEGRAM__ENABLED=True
+      - FREQTRADE__TELEGRAM__TOKEN=${TELEGRAM_BOT_TOKEN}
+      - FREQTRADE__TELEGRAM__CHAT_ID=${TELEGRAM_CHAT_ID}
+      - FREQTRADE__API_SERVER__ENABLED=True
+      - FREQTRADE__API_SERVER__LISTEN_IP_ADDRESS=0.0.0.0
+      - FREQTRADE__API_SERVER__LISTEN_PORT=8080
+      - FREQTRADE__API_SERVER__JWT_SECRET_KEY=${FREQTRADE_JWT_SECRET}
+    command: trade --config user_data/config.json --userdir user_data
+    restart: unless-stopped
+    networks:
+      - trading_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - dca-webhook
+
+  dca-webhook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dca-webhook
+    ports:
+      - "5555:5555"
+    volumes:
+      - /root/dca-config/user_data:/freqtrade/user_data
+    environment:
+      - FLASK_ENV=production
+      - LOG_LEVEL=INFO
+      - DATA_DIR=/freqtrade/user_data
+      - WEBHOOK_PORT=5555
+      - WEBHOOK_HOST=0.0.0.0
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    restart: unless-stopped
+    networks:
+      - trading_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5555/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  trading_network:
+    driver: bridge
