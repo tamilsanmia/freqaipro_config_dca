@@ -394,8 +394,56 @@ class FreqAi_NoTank4h(IStrategy):
 
     def informative_pairs(self):
         pairs = self.dp.current_whitelist()
-        informative_pairs = [(pair, self.informative_timeframe) for pair in pairs]
+        informative_pairs = [(pair, '1h') for pair in pairs]
+        informative_pairs += [(pair, self.informative_timeframe) for pair in pairs]
         return informative_pairs
+
+    @informative('1h')
+    def populate_indicators_1h(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+
+        dataframe["rsi"] = ta.RSI(dataframe)
+        dataframe["DI_values"] = ta.PLUS_DI(dataframe) - ta.MINUS_DI(dataframe)
+        dataframe["DI_cutoff"] = 0
+
+        maxima = np.zeros(len(dataframe))
+        minima = np.zeros(len(dataframe))
+
+        maxima[argrelextrema(dataframe["close"].values, np.greater, order=5)] = 1
+        minima[argrelextrema(dataframe["close"].values, np.less, order=5)] = 1
+
+        dataframe["maxima"] = maxima
+        dataframe["minima"] = minima
+
+        dataframe["&s-extrema"] = 0
+        min_peaks = argrelextrema(dataframe["close"].values, np.less, order=5)[0]
+        max_peaks = argrelextrema(dataframe["close"].values, np.greater, order=5)[0]
+        dataframe.loc[min_peaks, "&s-extrema"] = -1
+        dataframe.loc[max_peaks, "&s-extrema"] = 1
+
+        murrey_math_levels = calculate_murrey_math_levels(dataframe)
+        for level, value in murrey_math_levels.items():
+            dataframe[level] = value
+
+        dataframe["mmlextreme_oscillator"] = 100 * (
+                (dataframe["close"] - dataframe["[4/8]P"])
+                / (dataframe["[+3/8]P"] - dataframe["[-3/8]P"])
+        )
+        dataframe["DI_catch"] = np.where(dataframe["DI_values"] > dataframe["DI_cutoff"], 0, 1)
+
+        dataframe["minima_sort_threshold"] = dataframe["close"].rolling(window=10).min()
+        dataframe["maxima_sort_threshold"] = dataframe["close"].rolling(window=10).max()
+
+        dataframe["min_threshold_mean"] = dataframe["minima_sort_threshold"].expanding().mean()
+        dataframe["max_threshold_mean"] = dataframe["maxima_sort_threshold"].expanding().mean()
+
+        dataframe["maxima_check"] = (
+            dataframe["maxima"].rolling(4).apply(lambda x: int((x != 1).all()), raw=True).fillna(0)
+        )
+        dataframe["minima_check"] = (
+            dataframe["minima"].rolling(4).apply(lambda x: int((x != 1).all()), raw=True).fillna(0)
+        )
+
+        return dataframe
 
     @informative('4h')
     def populate_indicators_4h(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
@@ -493,7 +541,75 @@ class FreqAi_NoTank4h(IStrategy):
         return dataframe
 
     def populate_entry_trend(self, df: DataFrame, metadata: dict) -> DataFrame:
-        # Conditions for long entry
+        # ========== 1H ENTRIES ==========
+        # Conditions for long entry on 1H
+        df.loc[
+            (
+                (df["DI_catch_1h"] == 1)  # DI_catch condition
+                & (df["maxima_check_1h"] == 1)  # maxima_check condition
+                & (df["&s-extrema_1h"] < 0)  # extrema condition
+                & (df["minima_1h"].shift(1) == 1)  # prior minima condition
+                & (df["volume_1h"] > 0)  # Volume greater than 0
+                & (df["rsi_1h"] < 30)  # RSI below 30 (extra filter to limit entries)
+            ),
+            ["enter_long", "enter_tag"],
+        ] = (1, "1H_Minima")
+
+        df.loc[
+            (
+                (df["minima_check_1h"] == 0)  # minima_check condition
+                & (df["volume_1h"] > 0)  # Volume greater than 0
+                & (df["rsi_1h"] < 30)  # RSI below 30 (extra filter to limit entries)
+            ),
+            ["enter_long", "enter_tag"],
+        ] = (1, "1H_Minima_Full_Send")
+
+        df.loc[
+            (
+                (df["DI_catch_1h"] == 1)  # DI_catch condition
+                & (df["minima_check_1h"] == 0)  # minima_check condition
+                & (df["minima_check_1h"].shift(5) == 1)  # prior minima_check condition
+                & (df["volume_1h"] > 0)  # Volume greater than 0
+                & (df["rsi_1h"] < 30)  # RSI below 30 (extra filter to limit entries)
+            ),
+            ["enter_long", "enter_tag"],
+        ] = (1, "1H_Minima_Check")
+
+        # Conditions for short entry on 1H
+        df.loc[
+            (
+                (df["DI_catch_1h"] == 1)  # DI_catch condition
+                & (df["minima_check_1h"] == 1)  # minima_check condition
+                & (df["&s-extrema_1h"] > 0)  # extrema condition
+                & (df["maxima_1h"].shift(1) == 1)  # prior maxima condition
+                & (df["volume_1h"] > 0)  # Volume greater than 0
+                & (df["rsi_1h"] > 70)  # RSI above 70 (extra filter to limit entries)
+            ),
+            ["enter_short", "enter_tag"],
+        ] = (1, "1H_Maxima")
+
+        df.loc[
+            (
+                (df["maxima_check_1h"] == 0)  # maxima_check condition
+                & (df["volume_1h"] > 0)  # Volume greater than 0
+                & (df["rsi_1h"] > 70)  # RSI above 70 (extra filter to limit entries)
+            ),
+            ["enter_short", "enter_tag"],
+        ] = (1, "1H_Maxima_Full_Send")
+
+        df.loc[
+            (
+                (df["DI_catch_1h"] == 1)  # DI_catch condition
+                & (df["maxima_check_1h"] == 0)  # maxima_check condition
+                & (df["maxima_check_1h"].shift(5) == 1)  # prior maxima_check condition
+                & (df["volume_1h"] > 0)  # Volume greater than 0
+                & (df["rsi_1h"] > 70)  # RSI above 70 (extra filter to limit entries)
+            ),
+            ["enter_short", "enter_tag"],
+        ] = (1, "1H_Maxima_Check")
+
+        # ========== 4H ENTRIES ==========
+        # Conditions for long entry on 4H
         df.loc[
             (
                 (df["DI_catch_4h"] == 1)  # DI_catch condition
@@ -504,7 +620,7 @@ class FreqAi_NoTank4h(IStrategy):
                 & (df["rsi_4h"] < 30)  # RSI below 30 (extra filter to limit entries)
             ),
             ["enter_long", "enter_tag"],
-        ] = (1, "Minima")
+        ] = (1, "4H_Minima")
 
         df.loc[
             (
@@ -513,7 +629,7 @@ class FreqAi_NoTank4h(IStrategy):
                 & (df["rsi_4h"] < 30)  # RSI below 30 (extra filter to limit entries)
             ),
             ["enter_long", "enter_tag"],
-        ] = (1, "Minima Full Send")
+        ] = (1, "4H_Minima_Full_Send")
 
         df.loc[
             (
@@ -524,9 +640,9 @@ class FreqAi_NoTank4h(IStrategy):
                 & (df["rsi_4h"] < 30)  # RSI below 30 (extra filter to limit entries)
             ),
             ["enter_long", "enter_tag"],
-        ] = (1, "Minima Check")
+        ] = (1, "4H_Minima_Check")
 
-        # Conditions for short entry
+        # Conditions for short entry on 4H
         df.loc[
             (
                 (df["DI_catch_4h"] == 1)  # DI_catch condition
@@ -537,7 +653,7 @@ class FreqAi_NoTank4h(IStrategy):
                 & (df["rsi_4h"] > 70)  # RSI above 70 (extra filter to limit entries)
             ),
             ["enter_short", "enter_tag"],
-        ] = (1, "Maxima")
+        ] = (1, "4H_Maxima")
 
         df.loc[
             (
@@ -546,7 +662,7 @@ class FreqAi_NoTank4h(IStrategy):
                 & (df["rsi_4h"] > 70)  # RSI above 70 (extra filter to limit entries)
             ),
             ["enter_short", "enter_tag"],
-        ] = (1, "Maxima Full Send")
+        ] = (1, "4H_Maxima_Full_Send")
 
         df.loc[
             (
@@ -557,7 +673,7 @@ class FreqAi_NoTank4h(IStrategy):
                 & (df["rsi_4h"] > 70)  # RSI above 70 (extra filter to limit entries)
             ),
             ["enter_short", "enter_tag"],
-        ] = (1, "Maxima Check")
+        ] = (1, "4H_Maxima_Check")
 
         return df
 
