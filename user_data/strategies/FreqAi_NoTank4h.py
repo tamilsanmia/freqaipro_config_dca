@@ -1,7 +1,9 @@
 import logging
 import os
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone
+import json
+from pathlib import Path
 
 warnings.filterwarnings('ignore')
 
@@ -227,6 +229,19 @@ class FreqAi_NoTank4h(IStrategy):
                 
                 # Create unique DCA order ID
                 dca_order_id = f"{trade.pair}_{trade.open_date}_{dca_order_number}"
+
+                file_status = self._get_dca_confirmation_status(dca_order_id)
+                if file_status == "declined":
+                    self.dca_declined_orders.add(dca_order_id)
+                    self._clear_dca_confirmation(dca_order_id)
+                    logger.info(f"DCA order {dca_order_id} was declined (file)")
+                    return None
+                if file_status == "confirmed":
+                    self._clear_dca_confirmation(dca_order_id)
+                    logger.info(f"DCA order {dca_order_id} confirmed (file), executing...")
+                    return dca_stake
+                if file_status == "pending":
+                    return None
                 
                 # Check if already declined
                 if dca_order_id in self.dca_declined_orders:
@@ -249,13 +264,16 @@ class FreqAi_NoTank4h(IStrategy):
                         current_profit,
                         dca_order_id
                     )
+                    timestamp = current_time
+                    if timestamp is not None and timestamp.tzinfo is None:
+                        timestamp = timestamp.replace(tzinfo=timezone.utc)
                     self.dca_pending_confirmations[dca_order_id] = {
                         'pair': trade.pair,
                         'order_number': dca_order_number,
                         'entry_rate': current_rate,
                         'stake': dca_stake,
                         'profit': current_profit,
-                        'timestamp': current_time
+                        'timestamp': timestamp
                     }
                     logger.info(f"DCA confirmation pending for {dca_order_id}")
                 
@@ -264,6 +282,36 @@ class FreqAi_NoTank4h(IStrategy):
                 logger.warning(f"Error in DCA execution: {str(e)}")
                 return None
         return None
+
+    def _get_dca_confirmation_status(self, dca_order_id: str) -> str:
+        path = Path(os.getenv("DCA_CONFIRMATIONS_PATH", "/freqtrade/user_data/dca_confirmations.json"))
+        if not path.exists():
+            return ""
+        try:
+            data = json.loads(path.read_text())
+        except Exception as e:
+            logger.warning(f"Failed to read DCA confirmations: {e}")
+            return ""
+        if dca_order_id not in data:
+            return ""
+        return str(data[dca_order_id].get("status", ""))
+
+    def _clear_dca_confirmation(self, dca_order_id: str) -> None:
+        path = Path(os.getenv("DCA_CONFIRMATIONS_PATH", "/freqtrade/user_data/dca_confirmations.json"))
+        if not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text())
+        except Exception as e:
+            logger.warning(f"Failed to read DCA confirmations: {e}")
+            return
+        if dca_order_id not in data:
+            return
+        data.pop(dca_order_id, None)
+        try:
+            path.write_text(json.dumps(data, indent=2, default=str))
+        except Exception as e:
+            logger.warning(f"Failed to write DCA confirmations: {e}")
 
     def _send_dca_confirmation(self, pair: str, order_number: int, entry_rate: float, 
                                stake: float, profit: float, dca_order_id: str) -> None:
@@ -348,13 +396,37 @@ class FreqAi_NoTank4h(IStrategy):
     def _cleanup_old_confirmations(self) -> None:
         """Clean up and auto-decline DCA confirmations older than timeout period"""
         from datetime import timedelta
-        current_time = datetime.now()
+        current_time = datetime.now(timezone.utc)
         expired_ids = []
         auto_declined_ids = []
-        
+
+
         for dca_id, details in list(self.dca_pending_confirmations.items()):
-            time_elapsed = current_time - details['timestamp']
-            
+            timestamp = details.get('timestamp')
+            if timestamp is None:
+                continue
+            # Convert timestamp to timezone-aware UTC datetime
+            try:
+                if isinstance(timestamp, str):
+                    # Try ISO format first
+                    try:
+                        timestamp_dt = datetime.fromisoformat(timestamp)
+                    except Exception:
+                        # Fallback: try parsing as float seconds
+                        timestamp_dt = datetime.utcfromtimestamp(float(timestamp))
+                    if timestamp_dt.tzinfo is None:
+                        timestamp_dt = timestamp_dt.replace(tzinfo=timezone.utc)
+                elif hasattr(timestamp, 'tzinfo'):
+                    timestamp_dt = timestamp
+                    if timestamp_dt.tzinfo is None:
+                        timestamp_dt = timestamp_dt.replace(tzinfo=timezone.utc)
+                else:
+                    # Fallback: treat as UNIX timestamp
+                    timestamp_dt = datetime.utcfromtimestamp(float(timestamp)).replace(tzinfo=timezone.utc)
+            except Exception:
+                continue
+            time_elapsed = current_time - timestamp_dt
+
             # Auto-decline after timeout without response
             if time_elapsed > timedelta(minutes=self.dca_confirmation_timeout_minutes):
                 auto_declined_ids.append(dca_id)
@@ -363,16 +435,16 @@ class FreqAi_NoTank4h(IStrategy):
                     f"DCA order {dca_id} auto-declined due to no confirmation within "
                     f"{self.dca_confirmation_timeout_minutes} minutes"
                 )
-            
+
             # Clean up very old confirmations (1 hour)
             if time_elapsed > timedelta(hours=1):
                 expired_ids.append(dca_id)
                 logger.info(f"Cleaning up expired DCA confirmation: {dca_id}")
-        
+
         # Remove auto-declined orders from pending
         for dca_id in auto_declined_ids:
             self.dca_pending_confirmations.pop(dca_id, None)
-        
+
         # Remove very old confirmations
         for dca_id in expired_ids:
             self.dca_pending_confirmations.pop(dca_id, None)
